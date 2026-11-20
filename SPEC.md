@@ -331,13 +331,14 @@ Upgrade to a Gaussian process later [D].
 - **Privacy note** in Settings now says scans stay on the phone, there is no account or upload, and a report leaves only when the user taps Share and picks an app.
 
 **Build status (2026-11-21).**
+- **Battery (2026-11-21):** see §14; sketch mode is fine for a normal walk.
 - **Verified on the itel S665L (Android 12):** M0 and M1 (tabs, theme, live signal without location), the M2 fallback ("doesn't support AR"), and that the full app including Kotlin `WifiScanHandler` builds and installs (2026-11-21). **Release build (2026-11-21):** the merged release manifest has no `INTERNET` permission (AT22 holds after libraries merge in). Its only permissions are Wi-Fi state, network state, change Wi-Fi state, fine/coarse location and camera, plus AndroidX's own non-exported receiver permission. The report `FileProvider` is not exported. The release APK is 54 MB. The signal stream now stops when the activity is destroyed (it kept sending to a detached engine).
 - **Tests:** 236 automated tests pass and `flutter analyze` is clean.
 - **Not yet verified:**
   - M3 onward on the phone, including the database migrations v1 → v6, the sketch distance tools and out-of-range spots.
   - Kotlin `ShareHandler` and the `FileProvider` entry: written after the last phone build, so never compiled; the share sheet itself only works on the phone.
   - AR tracking (M2) on a supported phone.
-  - The battery measurement.
+  - Battery for an AR scan (needs a supported phone; the camera and GL use more).
 - **Not built:**
   - M4 (AR wall tracing and the router step).
   - The AR → manual handoff mid-scan.
@@ -379,7 +380,7 @@ The 2–3-week target is tight for M0–M10 [J]. M0–M7 is the minimum MVP; M8�
 | **AR drift** | Start and end at the router, report `loop_error_m`, and warn above 1 m [J]; short guided loops; drop non-TRACKING poses. |
 | **RSSI noise** (body, orientation, fluctuation) | Median per cell; minimum 3 samples for "measured"; fixed holding pose; 5 s medians for spot readings; never recommend from a single sample. |
 | **Scan throttling** (4 / 2 min [V]) | Live map uses connected RSSI only [D]; app-side budget counter; 2 scans per survey; cached results otherwise. |
-| **Battery / heat** (camera + GL + Wi-Fi) | Stop the camera on Pause; pose at 5 Hz, not per frame; nudge to finish after 15 min [J]; measure in M10. |
+| **Battery / heat** (camera + GL + Wi-Fi) | Stop the camera on Pause; pose at 5 Hz, not per frame; nudge to finish after 15 min [J]; measured 2026-11-21: a 15-min sketch scan, screen on, debug build, itel S665L used 4 % (58 → 54 %), about 16 %/h; a typical 5–10 min home walk costs 2–3 %. The phone was unplugged (not charging). A debug build uses more power than release, so real use should drain slightly less. The 15-min nudge stays [J]. |
 | Dark rooms / white walls [D] | Specific tracking messages; per-room manual handoff. |
 | Platform-view FPS [V] | Decide in M2; native Activity fallback. |
 | RSSI may need location | Not needed on the one phone tested (Android 12). Re-check on Android 13+ when possible. |
