@@ -10,6 +10,7 @@ import 'package:sagap/data/settings_store.dart';
 import 'package:sagap/domain/channel_check.dart';
 import 'package:sagap/domain/home_layout.dart';
 import 'package:sagap/domain/hotspot.dart';
+import 'package:sagap/platform/share_bridge.dart';
 import 'package:sagap/platform/wifi_scan_bridge.dart';
 import 'package:sagap/domain/path_track.dart';
 import 'package:sagap/domain/scan_record.dart';
@@ -219,6 +220,10 @@ class MemoryScanRepository implements ScanRepository {
   Future<List<ChannelCheck>> channelChecksForScan(int scanId) async =>
       scansById[scanId]?.$2.channelChecks ?? const [];
 
+  @override
+  Future<List<FloorPoint>> noSignalSpotsForScan(int scanId) async =>
+      scansById[scanId]?.$2.noSignalSpots ?? const [];
+
   final Map<int, List<(DateTime, HotspotTest)>> hotspotTests = {};
 
   @override
@@ -308,6 +313,7 @@ Future<void> pumpSagap(
   MemorySettingsStore? store,
   MemoryScanRepository? repo,
   FakeWifiScanBridge? wifi,
+  FakeShareBridge? share,
   Map<String, String> initialSettings = const {
     SettingsKeys.onboardingDone: 'true',
   },
@@ -325,6 +331,7 @@ Future<void> pumpSagap(
         // tests that are not about it.
         wifiScanBridgeProvider.overrideWithValue(wifi ?? FakeWifiScanBridge(granted: true)),
         clockProvider.overrideWithValue(() => testNow),
+        shareBridgeProvider.overrideWithValue(share ?? FakeShareBridge()),
         arCameraBuilderProvider.overrideWithValue(
           (_) => const ColoredBox(
             key: Key('fake-ar-camera'),
@@ -337,4 +344,20 @@ Future<void> pumpSagap(
       child: const SagapApp(),
     ),
   );
+}
+
+/// Records shared images instead of opening Android's share sheet.
+class FakeShareBridge implements ShareBridge {
+  FakeShareBridge({this.error});
+
+  /// Thrown by [shareImage] when set.
+  final PlatformException? error;
+
+  final List<(Uint8List, String)> shared = [];
+
+  @override
+  Future<void> shareImage(Uint8List png, String fileName) async {
+    if (error case final e?) throw e;
+    shared.add((png, fileName));
+  }
 }

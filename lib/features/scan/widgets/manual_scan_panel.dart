@@ -29,8 +29,9 @@ class ManualScanPanel extends ConsumerWidget {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
 
     if (layout == null) return const SizedBox.shrink();
+    // Recording works without a connection too: such a spot is saved as
+    // out of range, which is how you find where the Wi-Fi stops.
     final canRecord = status == ScanStatus.recording &&
-        connected &&
         capture.position != null &&
         !capture.isCollecting;
 
@@ -53,6 +54,7 @@ class ManualScanPanel extends ConsumerWidget {
                     for (final p in capture.points)
                       SketchPoint(FloorPoint(p.xM!, p.yM!), p.rssiDbm),
                   ],
+                  noSignalPoints: capture.noSignalSpots,
                   onTap: capture.isCollecting ? null : controller.setPosition,
                   semanticLabel: 'Room sketch. Tap to mark where you are standing.',
                 ),
@@ -84,7 +86,7 @@ class ManualScanPanel extends ConsumerWidget {
                 children: [
                   IconButton(
                     tooltip: 'Undo last spot',
-                    onPressed: capture.points.isEmpty ? null : controller.undoLast,
+                    onPressed: capture.spots.isEmpty ? null : controller.undoLast,
                     icon: const Icon(Icons.undo),
                   ),
                   const SizedBox(width: 8),
@@ -96,6 +98,14 @@ class ManualScanPanel extends ConsumerWidget {
                     ),
                   ),
                 ],
+              ),
+            if (!connected && status == ScanStatus.recording)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'No Wi-Fi here. Record to mark this spot Out of range.',
+                  style: textTheme.bodyMedium,
+                ),
               ),
             const SizedBox(height: 8),
             Text(
@@ -109,7 +119,10 @@ class ManualScanPanel extends ConsumerWidget {
   }
 
   static String _coverage(HomeLayout layout, ManualCapture capture) {
-    final spots = capture.points.length == 1 ? '1 spot' : '${capture.points.length} spots';
+    final total = capture.spots.length;
+    final noSignal = capture.noSignalSpots.length;
+    final spots = '${total == 1 ? '1 spot' : '$total spots'}'
+        '${noSignal > 0 ? ' ($noSignal out of range)' : ''}';
     final counts = layout.pointsPerRoom(capture.pointLocations);
     final needing = layout.roomsNeedingPoints(capture.pointLocations);
     if (needing.isEmpty) {

@@ -17,10 +17,15 @@ class ScanSummarySheet extends StatelessWidget {
     required this.savedSampleCount,
     this.track,
     this.manualSpots,
+    this.noSignalSpots = 0,
   });
 
-  /// Spots recorded on the room sketch; null when not a sketch scan.
+  /// Spots recorded on the room sketch (measured and out of range); null
+  /// when not a sketch scan.
   final int? manualSpots;
+
+  /// How many of [manualSpots] had no Wi-Fi connection.
+  final int noSignalSpots;
 
   final ScanSession session;
 
@@ -73,9 +78,8 @@ class ScanSummarySheet extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Text(
-                  spots == 1
-                      ? '1 spot recorded on the sketch'
-                      : '$spots spots recorded on the sketch',
+                  '${spots == 1 ? '1 spot' : '$spots spots'} recorded on the sketch'
+                  '${noSignalSpots > 0 ? ', $noSignalSpots out of range' : ''}',
                   style: textTheme.bodyLarge?.copyWith(color: muted),
                 ),
               ),

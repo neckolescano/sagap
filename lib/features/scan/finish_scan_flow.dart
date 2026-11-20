@@ -19,7 +19,8 @@ Future<void> runFinishFlow(BuildContext context, WidgetRef ref) async {
   final arMode = ref.read(arModeProvider);
   final manualHomeId = ref.read(manualHomeProvider);
   final track = arMode ? ref.read(pathTrackProvider) : null;
-  final manualPoints = ref.read(manualCaptureProvider).points;
+  final capture = ref.read(manualCaptureProvider);
+  final manualPoints = capture.points;
   // Second channel check runs while the summary is open (SPEC.md §7).
   final finishCheck = ref.read(channelCheckProvider.notifier).checkNow();
   controller.finish();
@@ -39,6 +40,7 @@ Future<void> runFinishFlow(BuildContext context, WidgetRef ref) async {
       samples: samples,
       track: track,
       channelChecks: ref.read(channelCheckProvider).checks,
+      noSignalSpots: mode == ScanMode.manual ? capture.noSignalSpots : const [],
     );
   }
 
@@ -53,7 +55,8 @@ Future<void> runFinishFlow(BuildContext context, WidgetRef ref) async {
         session: session,
         track: track,
         savedSampleCount: samples.length,
-        manualSpots: mode == ScanMode.manual ? samples.length : null,
+        manualSpots: mode == ScanMode.manual ? capture.spots.length : null,
+        noSignalSpots: mode == ScanMode.manual ? capture.noSignalSpots.length : 0,
       ),
     );
     if (!context.mounted) break;

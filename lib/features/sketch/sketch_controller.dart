@@ -18,10 +18,10 @@ class SketchController extends AsyncNotifier<HomeLayout> {
   @override
   Future<HomeLayout> build() => _repo.layoutForHome(homeId);
 
-  Future<void> addRoom(String name, double width, double length) async {
+  Future<void> addRoom(String name, double width, double length, {bool outside = false}) async {
     // Place and snap first, then store with a real id.
     final room = _layout
-        .addRoom(id: -1, name: name, width: width, length: length)
+        .addRoom(id: -1, name: name, width: width, length: length, outside: outside)
         .rooms
         .last;
     final id = await _repo.saveRoom(homeId, room);
@@ -37,6 +37,17 @@ class SketchController extends AsyncNotifier<HomeLayout> {
     final updated = _layout.updateRoom(room);
     state = AsyncData(updated);
     await _repo.saveRoom(homeId, updated.rooms.firstWhere((r) => r.id == room.id));
+  }
+
+  /// Moves [room] by one [nudgeStepM] grid step per unit of [dx] / [dy].
+  Future<void> nudgeRoom(SketchRoom room, int dx, int dy) => commitRoom(
+        room.copyWith(x: room.x + dx * nudgeStepM, y: room.y + dy * nudgeStepM),
+      );
+
+  /// Puts [room] [gapM] meters to [side] of the room [anchorId].
+  Future<void> placeBeside(SketchRoom room, int anchorId, RoomSide side, double gapM) {
+    final anchor = _layout.rooms.firstWhere((r) => r.id == anchorId);
+    return commitRoom(_layout.placeBeside(room, anchor, side, gapM));
   }
 
   Future<void> removeRoom(int roomId) async {

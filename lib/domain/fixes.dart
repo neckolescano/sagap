@@ -131,7 +131,11 @@ List<DeadZone> findDeadZones(Heatmap map) {
 /// Dead zones plus priority spots that are Weak or Dead (SPEC.md §9).
 List<FixTarget> findTargets(Heatmap map, HomeLayout layout) {
   final targets = <FixTarget>[];
-  final zones = findDeadZones(map);
+  // A dead zone in the yard or at a neighbour's is not something to fix.
+  final zones = [
+    for (final z in findDeadZones(map))
+      if (!_isOutside(layout, z.centroid)) z,
+  ];
   for (final (i, zone) in zones.indexed) {
     final room = layout.roomAt(zone.centroid)?.name;
     targets.add(FixTarget(
@@ -151,6 +155,16 @@ List<FixTarget> findTargets(Heatmap map, HomeLayout layout) {
   return targets;
 }
 
+/// Total dead-zone area in m², leaving out zones in outside rooms.
+double homeDeadAreaM2(Heatmap map, HomeLayout layout) => [
+      for (final z in findDeadZones(map))
+        if (!_isOutside(layout, z.centroid)) z.areaM2,
+    ].fold(0.0, (a, b) => a + b);
+
+/// True when [p] is in an outside room and in no home room.
+bool _isOutside(HomeLayout layout, FloorPoint p) =>
+    layout.homeRoomAt(p) == null && (layout.roomAt(p)?.outside ?? false);
+
 double _distanceToSegment(FloorPoint p, FloorPoint a, FloorPoint b) {
   final dx = b.x - a.x;
   final dy = b.y - a.y;
@@ -163,7 +177,13 @@ double _distanceToSegment(FloorPoint p, FloorPoint a, FloorPoint b) {
 /// Extender spot for [target] (SPEC.md §9A): a **measured** cell at −65…−60
 /// dBm within 1.5 m of the router → target line, nearest the target.
 /// Null when there is none; predicted cells are never used.
-FloorPoint? extenderSpot(Heatmap map, FloorPoint router, FloorPoint target) {
+/// Cells inside an outside room of [layout] (yard, neighbour) are skipped.
+FloorPoint? extenderSpot(
+  Heatmap map,
+  FloorPoint router,
+  FloorPoint target, {
+  HomeLayout layout = const HomeLayout(),
+}) {
   FloorPoint? best;
   var bestDistance = double.infinity;
   for (var row = 0; row < map.rows; row++) {
@@ -177,6 +197,7 @@ FloorPoint? extenderSpot(Heatmap map, FloorPoint router, FloorPoint target) {
       if (_distanceToSegment(center, router, target) > FixSettings.extenderLineToleranceM) {
         continue;
       }
+      if (_isOutside(layout, center)) continue;
       final d = center.distanceTo(target);
       if (d < bestDistance) {
         best = center;
@@ -288,7 +309,7 @@ List<Fix> buildFixes({
   final unreachable = <FixTarget>[];
   if (router != null) {
     for (final target in targets) {
-      final spot = extenderSpot(map, router, target.point);
+      final spot = extenderSpot(map, router, target.point, layout: layout);
       if (spot == null) {
         unreachable.add(target);
       } else {

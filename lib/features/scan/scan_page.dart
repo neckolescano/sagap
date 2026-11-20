@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/signal/signal_format.dart';
+import '../../data/scan_repository.dart';
 import '../../domain/ar_readiness.dart';
 import '../../domain/scan_session.dart';
 import '../../platform/ar_bridge.dart';
@@ -38,8 +39,12 @@ class ScanPage extends ConsumerWidget {
     final latest = live.value;
     final connected = latest?.validRssi != null;
     final status = session.status;
-    final inScan = status == ScanStatus.recording || status == ScanStatus.paused;
+    final inScan =
+        status == ScanStatus.recording || status == ScanStatus.paused;
 
+    // Like a watch app's welcome screen: compact title, greeting, hero
+    // meter, one big button. No large collapsing title here, so the meter
+    // and cards stay in view.
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scan'),
@@ -56,57 +61,70 @@ class ScanPage extends ConsumerWidget {
       body: Column(
         children: [
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              children: [
-                if (inScan && session.isLong)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.battery_alert_outlined),
-                        title: const Text('Long scan'),
-                        subtitle: Text(
-                          'You have been recording for over '
-                          '${longScanNudge.inMinutes} minutes. Finish when you can '
-                          'to save battery.',
+            child: CustomScrollView(
+              slivers: [
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  sliver: SliverList.list(
+                    children: [
+                      if (!inScan)
+                        _Greeting(hour: ref.watch(clockProvider)().hour),
+                      if (inScan && session.isLong)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Card(
+                            child: ListTile(
+                              leading: const Icon(Icons.battery_alert_outlined),
+                              title: const Text('Long scan'),
+                              subtitle: Text(
+                                'You have been recording for over '
+                                '${longScanNudge.inMinutes} minutes. Finish when you can '
+                                'to save battery.',
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (inScan && arMode) ...[
+                        const SizedBox(height: 8),
+                        const ArCameraCard(),
+                        const SizedBox(height: 4),
+                      ],
+                      // Sketch first during a manual scan so "Record here" stays in
+                      // thumb reach without scrolling.
+                      if (inScan && manualHomeId != null) ...[
+                        const SizedBox(height: 8),
+                        ManualScanPanel(
+                          homeId: manualHomeId,
+                          connected: connected,
+                        ),
+                      ],
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: inScan && (arMode || manualHomeId != null)
+                              ? 72
+                              : _idleGaugeInset,
+                        ),
+                        child: SignalGauge(
+                          reading: _gaugeFor(live, latest),
+                          active: status == ScanStatus.recording,
                         ),
                       ),
-                    ),
-                  ),
-                if (inScan && arMode) ...[
-                  const SizedBox(height: 8),
-                  const ArCameraCard(),
-                  const SizedBox(height: 4),
-                ],
-                // Sketch first during a manual scan so "Record here" stays in
-                // thumb reach without scrolling.
-                if (inScan && manualHomeId != null) ...[
-                  const SizedBox(height: 8),
-                  ManualScanPanel(homeId: manualHomeId, connected: connected),
-                ],
-                Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: inScan && (arMode || manualHomeId != null) ? 72 : 8,
-                  ),
-                  child: SignalGauge(
-                    reading: _gaugeFor(live, latest),
-                    active: status == ScanStatus.recording,
+                      if (!inScan) ...[
+                        const ArStatusCard(),
+                        const SizedBox(height: 12),
+                        const ManualModeCard(),
+                        const SizedBox(height: 12),
+                      ],
+                      ScanStatsRow(session: session),
+                      const SizedBox(height: 12),
+                      if (inScan && arMode) ...[
+                        PathMiniMap(track: ref.watch(pathTrackProvider)),
+                        const SizedBox(height: 12),
+                      ],
+                      SignalTimeline(history: history),
+                    ],
                   ),
                 ),
-                if (!inScan) ...[
-                  const ArStatusCard(),
-                  const SizedBox(height: 12),
-                  const ManualModeCard(),
-                  const SizedBox(height: 12),
-                ],
-                ScanStatsRow(session: session),
-                const SizedBox(height: 12),
-                if (inScan && arMode) ...[
-                  PathMiniMap(track: ref.watch(pathTrackProvider)),
-                  const SizedBox(height: 12),
-                ],
-                SignalTimeline(history: history),
               ],
             ),
           ),
@@ -153,7 +171,9 @@ class ScanPage extends ConsumerWidget {
       if (!context.mounted) return;
       if (!useAr) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera not allowed. Recording signal only.')),
+          const SnackBar(
+            content: Text('Camera not allowed. Recording signal only.'),
+          ),
         );
       }
     }
@@ -167,7 +187,9 @@ class ScanPage extends ConsumerWidget {
   /// "Not now" or a denial only disables the channel check.
   Future<void> _askLocationOnce(BuildContext context, WidgetRef ref) async {
     final bridge = ref.read(wifiScanBridgeProvider);
-    if (ref.read(locationAskedProvider) || await bridge.locationGranted()) return;
+    if (ref.read(locationAskedProvider) || await bridge.locationGranted()) {
+      return;
+    }
     ref.read(locationAskedProvider.notifier).markAsked();
     if (!context.mounted) return;
     final allow = await showDialog<bool>(
@@ -234,7 +256,10 @@ class ScanPage extends ConsumerWidget {
     if (ref.read(arModeProvider)) await ref.read(arBridgeProvider).resume();
   }
 
-  GaugeReading _gaugeFor(AsyncValue<SignalReading> live, SignalReading? latest) {
+  GaugeReading _gaugeFor(
+    AsyncValue<SignalReading> live,
+    SignalReading? latest,
+  ) {
     if (live.hasError && latest == null) {
       return const GaugeMessage(
         "Can't read",
@@ -264,9 +289,13 @@ class _StatusChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (String label, Color color) = switch (status) {
-      ScanStatus.recording => (mode == null ? 'Recording' : 'Recording · $mode', scheme.primary),
+      ScanStatus.recording => (
+        mode == null ? 'Recording' : 'Recording · $mode',
+        scheme.primary,
+      ),
       ScanStatus.paused => ('Paused', scheme.onSurfaceVariant),
-      ScanStatus.idle || ScanStatus.finished => ('Live', scheme.onSurfaceVariant),
+      ScanStatus.idle ||
+      ScanStatus.finished => ('Live', scheme.onSurfaceVariant),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -279,7 +308,50 @@ class _StatusChip extends StatelessWidget {
         children: [
           Icon(Icons.circle, size: 10, color: color),
           const SizedBox(width: 6),
-          Text(label, style: TextStyle(color: color, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Side inset of the meter when idle; leaves room for the greeting and the
+/// AR / sketch cards above the fold.
+const double _idleGaugeInset = 36;
+
+/// Greeting above the meter when idle, like a watch app's welcome screen.
+class _Greeting extends StatelessWidget {
+  const _Greeting({required this.hour});
+
+  /// Local hour, 0–23.
+  final int hour;
+
+  static const int _afternoonFromHour = 12;
+  static const int _eveningFromHour = 18;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final greeting = hour < _afternoonFromHour
+        ? 'Good morning'
+        : hour < _eveningFromHour
+        ? 'Good afternoon'
+        : 'Good evening';
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(greeting, style: textTheme.titleLarge),
+          Text(
+            'Find where your Wi-Fi is weak.',
+            style: textTheme.bodyLarge?.copyWith(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );

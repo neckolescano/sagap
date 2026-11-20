@@ -54,8 +54,9 @@ class SettingsPage extends ConsumerWidget {
             leading: Icon(Icons.lock_outline),
             title: Text('Privacy'),
             subtitle: Text(
-              'Scans stay on this phone. Nothing is uploaded or shared, and '
-              'Wi-Fi network names are never saved.',
+              'Scans stay on this phone. Sagap has no account and never uploads '
+              'anything. A report leaves the phone only when you tap Share '
+              'and pick an app. Wi-Fi network names are never saved or shown.',
             ),
           ),
           const DeleteAllDataTile(),

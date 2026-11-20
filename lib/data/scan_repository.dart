@@ -22,6 +22,9 @@ abstract interface class ScanRepository {
   Future<List<ScanSummary>> scansForHome(int homeId);
   Future<List<StoredSample>> samplesForScan(int scanId);
   Future<List<ChannelCheck>> channelChecksForScan(int scanId);
+
+  /// Out-of-range sketch spots of a scan (may be empty).
+  Future<List<FloorPoint>> noSignalSpotsForScan(int scanId);
   Future<void> deleteScan(int scanId);
 
   // Room sketch (M6).
@@ -84,6 +87,7 @@ class SqfliteScanRepository implements ScanRepository {
             y: r['y']! as double,
             width: r['w']! as double,
             length: r['h']! as double,
+            outside: r['outside'] == 1,
           ),
       ],
       spots: [
@@ -106,6 +110,7 @@ class SqfliteScanRepository implements ScanRepository {
       'y': room.y,
       'w': room.width,
       'h': room.length,
+      'outside': room.outside ? 1 : 0,
     };
     if (room.id < 0) return _db.insert('rooms', values);
     final changed = await _db.update('rooms', values, where: 'id = ?', whereArgs: [room.id]);
@@ -211,6 +216,7 @@ class SqfliteScanRepository implements ScanRepository {
         const scanIds = 'SELECT id FROM scans WHERE home_id = ?';
         await txn.delete('samples', where: 'scan_id IN ($scanIds)', whereArgs: [homeId]);
         await txn.delete('channel_checks', where: 'scan_id IN ($scanIds)', whereArgs: [homeId]);
+        await txn.delete('no_signal_spots', where: 'scan_id IN ($scanIds)', whereArgs: [homeId]);
         await txn.delete('path_points', where: 'scan_id IN ($scanIds)', whereArgs: [homeId]);
         await txn.delete('scans', where: 'home_id = ?', whereArgs: [homeId]);
         await txn.delete('rooms', where: 'home_id = ?', whereArgs: [homeId]);
@@ -259,6 +265,9 @@ class SqfliteScanRepository implements ScanRepository {
             'json': jsonEncode(check.toJson()),
           });
         }
+        for (final p in scan.noSignalSpots) {
+          batch.insert('no_signal_spots', {'scan_id': scanId, 'x_m': p.x, 'y_m': p.y});
+        }
         await batch.commit(noResult: true);
         return scanId;
       });
@@ -275,6 +284,17 @@ class SqfliteScanRepository implements ScanRepository {
       for (final r in rows)
         ChannelCheck.fromJson(jsonDecode(r['json']! as String) as Map<String, Object?>),
     ];
+  }
+
+  @override
+  Future<List<FloorPoint>> noSignalSpotsForScan(int scanId) async {
+    final rows = await _db.query(
+      'no_signal_spots',
+      where: 'scan_id = ?',
+      whereArgs: [scanId],
+      orderBy: 'id',
+    );
+    return [for (final r in rows) FloorPoint(r['x_m']! as double, r['y_m']! as double)];
   }
 
   @override
@@ -325,6 +345,7 @@ class SqfliteScanRepository implements ScanRepository {
   Future<void> deleteScan(int scanId) => _db.transaction((txn) async {
         await txn.delete('samples', where: 'scan_id = ?', whereArgs: [scanId]);
         await txn.delete('channel_checks', where: 'scan_id = ?', whereArgs: [scanId]);
+        await txn.delete('no_signal_spots', where: 'scan_id = ?', whereArgs: [scanId]);
         await txn.delete('path_points', where: 'scan_id = ?', whereArgs: [scanId]);
         await txn.delete('scans', where: 'id = ?', whereArgs: [scanId]);
       });
@@ -358,9 +379,11 @@ ScanRecord buildScanRecord({
   required List<StoredSample> samples,
   PathTrack? track,
   List<ChannelCheck> channelChecks = const [],
+  List<FloorPoint> noSignalSpots = const [],
 }) =>
     ScanRecord(
       channelChecks: channelChecks,
+      noSignalSpots: noSignalSpots,
       startedAt: startedAt,
       durationMs: durationMs,
       mode: mode,

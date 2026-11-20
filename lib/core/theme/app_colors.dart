@@ -6,19 +6,21 @@ import '../signal/signal_quality.dart';
 abstract final class AppColors {
   static const Color accent = Color(0xFF3DD6F5);
 
-  static const Color darkBackground = Color(0xFF0A0F1C);
-  static const Color darkSurface = Color(0xFF121A2B);
-  static const Color darkSurfaceHigh = Color(0xFF1A2438);
-  static const Color darkOutline = Color(0xFF2A3650);
-  static const Color darkOnSurface = Color(0xFFE6ECF5);
-  static const Color darkMuted = Color(0xFF8B97AD);
+  // Dark: true black with raised grey cards (watch-app style, 2026-11-21).
+  static const Color darkBackground = Color(0xFF000000);
+  static const Color darkSurface = Color(0xFF1C1C1E);
+  static const Color darkSurfaceHigh = Color(0xFF2C2C2E);
+  static const Color darkOutline = Color(0xFF3A3A3C);
+  static const Color darkOnSurface = Color(0xFFF5F5F7);
+  static const Color darkMuted = Color(0xFF98989F);
 
-  static const Color lightBackground = Color(0xFFF4F7FB);
+  // Light: soft grey page with white cards.
+  static const Color lightBackground = Color(0xFFF2F2F7);
   static const Color lightSurface = Color(0xFFFFFFFF);
-  static const Color lightSurfaceHigh = Color(0xFFE8EEF6);
-  static const Color lightOutline = Color(0xFFD3DCE8);
-  static const Color lightOnSurface = Color(0xFF0A0F1C);
-  static const Color lightMuted = Color(0xFF5A6780);
+  static const Color lightSurfaceHigh = Color(0xFFE5E5EA);
+  static const Color lightOutline = Color(0xFFD1D1D6);
+  static const Color lightOnSurface = Color(0xFF000000);
+  static const Color lightMuted = Color(0xFF5F5F66);
   static const Color lightAccent = Color(0xFF00708A);
 
   static const Color excellent = Color(0xFF2EBD5A);

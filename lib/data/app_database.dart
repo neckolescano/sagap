@@ -8,7 +8,8 @@ abstract final class AppDatabase {
   /// v3: rooms, priority_spots, homes.router_x/y (room sketch, M6).
   /// v4: channel_checks (aggregates only, M7).
   /// v5: hotspot_tests (M9).
-  static const schemaVersion = 5;
+  /// v6: rooms.outside, no_signal_spots (outside areas, out-of-range spots).
+  static const schemaVersion = 6;
 
   static Future<Database> open() async {
     final dir = await getDatabasesPath();
@@ -21,12 +22,14 @@ abstract final class AppDatabase {
         await _createV3(db);
         await _createV4(db);
         await _createV5(db);
+        await _createV6(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) await _createV2(db);
         if (oldVersion < 3) await _createV3(db);
         if (oldVersion < 4) await _createV4(db);
         if (oldVersion < 5) await _createV5(db);
+        if (oldVersion < 6) await _createV6(db);
       },
     );
   }
@@ -130,6 +133,21 @@ abstract final class AppDatabase {
           json TEXT NOT NULL
         )''')
       ..execute('CREATE INDEX idx_hotspot_home ON hotspot_tests(home_id)');
+    await batch.commit(noResult: true);
+  }
+
+  /// Outside rooms (0 = home room) and out-of-range sketch spots.
+  static Future<void> _createV6(Database db) async {
+    final batch = db.batch()
+      ..execute('ALTER TABLE rooms ADD COLUMN outside INTEGER NOT NULL DEFAULT 0')
+      ..execute('''
+        CREATE TABLE no_signal_spots (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          scan_id INTEGER NOT NULL REFERENCES scans(id),
+          x_m REAL NOT NULL,
+          y_m REAL NOT NULL
+        )''')
+      ..execute('CREATE INDEX idx_no_signal_scan ON no_signal_spots(scan_id)');
     await batch.commit(noResult: true);
   }
 }

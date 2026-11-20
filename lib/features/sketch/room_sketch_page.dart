@@ -38,7 +38,7 @@ class _RoomSketchPageState extends ConsumerState<RoomSketchPage> {
       initialName: 'Room ${layout.rooms.length + 1}',
     );
     if (input == null) return;
-    await _controller.addRoom(input.name, input.width, input.length);
+    await _controller.addRoom(input.name, input.width, input.length, outside: input.outside);
     if (!mounted) return;
     final rooms = ref
         .read(sketchControllerProvider(widget.homeId))
@@ -55,11 +55,24 @@ class _RoomSketchPageState extends ConsumerState<RoomSketchPage> {
       initialName: room.name,
       initialWidth: room.width,
       initialLength: room.length,
+      initialOutside: room.outside,
     );
     if (input == null) return;
     await _controller.commitRoom(
-      room.copyWith(name: input.name, width: input.width, length: input.length),
+      room.copyWith(
+        name: input.name,
+        width: input.width,
+        length: input.length,
+        outside: input.outside,
+      ),
     );
+  }
+
+  Future<void> _placeRoom(HomeLayout layout, SketchRoom room) async {
+    final others = [for (final r in layout.rooms) if (r.id != room.id) r];
+    final input = await showPlaceBesideDialog(context, room: room, others: others);
+    if (input == null) return;
+    await _controller.placeBeside(room, input.anchorId, input.side, input.gapM);
   }
 
   Future<void> _deleteRoom(SketchRoom room) async {
@@ -145,6 +158,7 @@ class _RoomSketchPageState extends ConsumerState<RoomSketchPage> {
               selectedRoomId: _tool == SketchTool.rooms
                   ? _selectedRoomId
                   : null,
+              gapRoomId: _tool == SketchTool.rooms ? _selectedRoomId : null,
               onTap: (p) => _onTap(layout, p),
               onRoomDrag: _tool == SketchTool.rooms
                   ? _controller.previewRoom
@@ -166,6 +180,8 @@ class _RoomSketchPageState extends ConsumerState<RoomSketchPage> {
         onAddRoom: () => _addRoom(layout),
         onEditRoom: _editRoom,
         onDeleteRoom: _deleteRoom,
+        onPlaceRoom: (room) => _placeRoom(layout, room),
+        onNudgeRoom: _controller.nudgeRoom,
         onClearRouter: _controller.clearRouter,
         onRemoveSpot: _controller.removeSpot,
         onDone: layout.isEmpty ? null : () => Navigator.of(context).pop(true),
@@ -175,7 +191,8 @@ class _RoomSketchPageState extends ConsumerState<RoomSketchPage> {
 
   String _hint(HomeLayout layout) => switch (_tool) {
     SketchTool.rooms when layout.isEmpty => 'Add each room as a rectangle.',
-    SketchTool.rooms => 'Tap a room to select it. Drag to move it.',
+    SketchTool.rooms => 'Tap a room to select it. Drag to move it, or use '
+        'Place for an exact gap.',
     SketchTool.router => 'Tap where your router is.',
     SketchTool.spots => 'Tap places you care about, like your desk.',
   };
@@ -189,6 +206,8 @@ class _BottomPanel extends StatelessWidget {
     required this.onAddRoom,
     required this.onEditRoom,
     required this.onDeleteRoom,
+    required this.onPlaceRoom,
+    required this.onNudgeRoom,
     required this.onClearRouter,
     required this.onRemoveSpot,
     required this.onDone,
@@ -200,6 +219,8 @@ class _BottomPanel extends StatelessWidget {
   final VoidCallback onAddRoom;
   final ValueChanged<SketchRoom> onEditRoom;
   final ValueChanged<SketchRoom> onDeleteRoom;
+  final ValueChanged<SketchRoom> onPlaceRoom;
+  final void Function(SketchRoom room, int dx, int dy) onNudgeRoom;
   final VoidCallback onClearRouter;
   final ValueChanged<int> onRemoveSpot;
   final VoidCallback? onDone;
@@ -214,29 +235,43 @@ class _BottomPanel extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            if (tool == SketchTool.rooms && room != null) ...[
+              _SelectedRoomTools(
+                room: room,
+                layout: layout,
+                onPlace: () => onPlaceRoom(room),
+                onNudge: (dx, dy) => onNudgeRoom(room, dx, dy),
+              ),
+              const SizedBox(height: 8),
+            ],
             switch (tool) {
-              SketchTool.rooms => Row(
+              // Name and its buttons on one line, Add room on the next, so
+              // nothing overflows at large text sizes.
+              SketchTool.rooms => Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  if (room != null) ...[
-                    Expanded(
-                      child: Text(
-                        room.name,
-                        style: Theme.of(context).textTheme.titleMedium,
-                        overflow: TextOverflow.ellipsis,
-                      ),
+                  if (room != null)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            room.name,
+                            style: Theme.of(context).textTheme.titleMedium,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Edit room',
+                          icon: const Icon(Icons.edit_outlined),
+                          onPressed: () => onEditRoom(room),
+                        ),
+                        IconButton(
+                          tooltip: 'Delete room',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => onDeleteRoom(room),
+                        ),
+                      ],
                     ),
-                    IconButton(
-                      tooltip: 'Edit room',
-                      icon: const Icon(Icons.edit_outlined),
-                      onPressed: () => onEditRoom(room),
-                    ),
-                    IconButton(
-                      tooltip: 'Delete room',
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => onDeleteRoom(room),
-                    ),
-                  ] else
-                    const Spacer(),
                   FilledButton.tonalIcon(
                     onPressed: onAddRoom,
                     style: FilledButton.styleFrom(
@@ -288,6 +323,63 @@ class _BottomPanel extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Distances, nudge arrows and exact placement for the selected room.
+class _SelectedRoomTools extends StatelessWidget {
+  const _SelectedRoomTools({
+    required this.room,
+    required this.layout,
+    required this.onPlace,
+    required this.onNudge,
+  });
+
+  final SketchRoom room;
+  final HomeLayout layout;
+  final VoidCallback onPlace;
+  final void Function(int dx, int dy) onNudge;
+
+  static String _m(double v) => '${v.toStringAsFixed(1)} m';
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+    final overlaps = layout.overlapping(room);
+    final router = layout.routerDistanceM(room);
+    final facts = [
+      if (overlaps.isNotEmpty) 'Overlaps ${overlaps.map((r) => r.name).join(', ')}',
+      for (final g in layout.gapsFor(room))
+        '${g.meters == 0 ? 'Touches' : '${_m(g.meters)} to'} ${g.neighbour.name}',
+      if (router != null) 'Router ${_m(router)} away',
+    ];
+    Widget arrow(IconData icon, String tooltip, int dx, int dy) => IconButton(
+          tooltip: tooltip,
+          icon: Icon(icon),
+          onPressed: () => onNudge(dx, dy),
+        );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (facts.isNotEmpty)
+          Text(facts.join(' · '), style: textTheme.bodyMedium?.copyWith(color: muted)),
+        Wrap(
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            arrow(Icons.arrow_back, 'Move left', -1, 0),
+            arrow(Icons.arrow_upward, 'Move up', 0, -1),
+            arrow(Icons.arrow_downward, 'Move down', 0, 1),
+            arrow(Icons.arrow_forward, 'Move right', 1, 0),
+            TextButton.icon(
+              onPressed: layout.rooms.length > 1 ? onPlace : null,
+              icon: const Icon(Icons.straighten),
+              label: const Text('Place'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 }

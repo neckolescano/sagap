@@ -75,7 +75,17 @@ class SketchCanvas extends StatefulWidget {
     this.fixedTransform,
     this.transparentRooms = false,
     this.labelledPins = const [],
+    this.noSignalPoints = const [],
+    this.gapRoomId,
   });
+
+  /// Spots recorded with no Wi-Fi connection (out of range).
+  final List<FloorPoint> noSignalPoints;
+
+  /// Room whose distances to its neighbours are drawn. While a room is
+  /// dragged, that room's distances are drawn instead (when this is set or
+  /// [onRoomDrag] is given).
+  final int? gapRoomId;
 
   /// Lettered pins (hotspot candidates A, B, C).
   final List<(FloorPoint, String)> labelledPins;
@@ -123,6 +133,7 @@ class _SketchCanvasState extends State<SketchCanvas> {
               extra: [
                 ?widget.marker,
                 ...widget.points.map((p) => p.point),
+                ...widget.noSignalPoints,
                 ...widget.labelledPins.map((p) => p.$1),
               ],
             );
@@ -169,6 +180,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
                 transform: transform,
                 selectedRoomId: widget.selectedRoomId,
                 points: widget.points,
+                noSignalPoints: widget.noSignalPoints,
+                gapRoomId: _dragRoom?.id ?? widget.gapRoomId,
                 marker: widget.marker,
                 labelledPins: widget.labelledPins,
                 colors: _SketchColors(
@@ -182,6 +195,8 @@ class _SketchCanvasState extends State<SketchCanvas> {
                   muted: scheme.onSurfaceVariant,
                   router: scheme.primary,
                   spot: AppColors.weak,
+                  gapLine: scheme.tertiary,
+                  labelBackground: scheme.surface,
                 ),
                 textStyle: Theme.of(context).textTheme.labelMedium!,
               ),
@@ -208,8 +223,12 @@ class _SketchColors {
     required this.muted,
     required this.router,
     required this.spot,
+    required this.gapLine,
+    required this.labelBackground,
   });
 
+  final Color gapLine;
+  final Color labelBackground;
   final Color grid;
   final Color roomFill;
   final Color roomLine;
@@ -226,6 +245,8 @@ class _SketchPainter extends CustomPainter {
     required this.transform,
     required this.selectedRoomId,
     required this.points,
+    required this.noSignalPoints,
+    required this.gapRoomId,
     required this.marker,
     required this.labelledPins,
     required this.colors,
@@ -236,6 +257,8 @@ class _SketchPainter extends CustomPainter {
   final SketchTransform transform;
   final int? selectedRoomId;
   final List<SketchPoint> points;
+  final List<FloorPoint> noSignalPoints;
+  final int? gapRoomId;
   final FloorPoint? marker;
   final List<(FloorPoint, String)> labelledPins;
   final _SketchColors colors;
@@ -246,6 +269,15 @@ class _SketchPainter extends CustomPainter {
     _grid(canvas, size);
     for (final room in layout.rooms) {
       _room(canvas, room);
+    }
+    final gapRoom = layout.rooms.where((r) => r.id == gapRoomId).firstOrNull;
+    if (gapRoom != null) {
+      for (final gap in layout.gapsFor(gapRoom)) {
+        _gap(canvas, gapRoom, gap);
+      }
+    }
+    for (final p in noSignalPoints) {
+      _noSignal(canvas, p);
     }
     for (final p in points) {
       final o = transform.toPx(p.point);
@@ -300,21 +332,103 @@ class _SketchPainter extends CustomPainter {
       transform.toPx(FloorPoint(room.x + room.width, room.y + room.length)),
     );
     final selected = room.id == selectedRoomId;
-    canvas.drawRect(rect, Paint()..color = colors.roomFill.withValues(alpha: 0.85));
     canvas.drawRect(
       rect,
-      Paint()
-        ..color = selected ? colors.selected : colors.roomLine
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = selected ? 3 : 2,
+      Paint()..color = colors.roomFill.withValues(alpha: room.outside ? 0.35 : 0.85),
     );
+    final outline = Paint()
+      ..color = selected ? colors.selected : colors.roomLine
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = selected ? 3 : 2;
+    if (room.outside) {
+      _dashedRect(canvas, rect, outline);
+    } else {
+      canvas.drawRect(rect, outline);
+    }
     _label(
       canvas,
-      '${room.name}\n${_m(room.width)} × ${_m(room.length)} m',
+      '${room.name}${room.outside ? ' (outside)' : ''}\n'
+      '${_m(room.width)} × ${_m(room.length)} m',
       rect.center,
       maxWidth: rect.width - 8,
       color: colors.text,
     );
+  }
+
+  static const double _dashPx = 8;
+  static const double _gapTickPx = 6;
+
+  void _dashedRect(Canvas canvas, Rect rect, Paint paint) {
+    void dashed(Offset a, Offset b) {
+      final length = (b - a).distance;
+      final dir = (b - a) / length;
+      for (var d = 0.0; d < length; d += 2 * _dashPx) {
+        canvas.drawLine(a + dir * d, a + dir * math.min(d + _dashPx, length), paint);
+      }
+    }
+
+    dashed(rect.topLeft, rect.topRight);
+    dashed(rect.topRight, rect.bottomRight);
+    dashed(rect.bottomRight, rect.bottomLeft);
+    dashed(rect.bottomLeft, rect.topLeft);
+  }
+
+  /// Dimension line from [room]'s edge to the neighbour, labelled in meters,
+  /// drawn through the middle of the span the two rooms share.
+  void _gap(Canvas canvas, SketchRoom room, RoomGap gap) {
+    if (gap.meters <= 0) return;
+    final o = gap.neighbour;
+    final horizontal = gap.side == RoomSide.left || gap.side == RoomSide.right;
+    final mid = horizontal
+        ? (math.max(room.y, o.y) + math.min(room.bottom, o.bottom)) / 2
+        : (math.max(room.x, o.x) + math.min(room.right, o.right)) / 2;
+    final (FloorPoint a, FloorPoint b) = switch (gap.side) {
+      RoomSide.left => (FloorPoint(o.right, mid), FloorPoint(room.x, mid)),
+      RoomSide.right => (FloorPoint(room.right, mid), FloorPoint(o.x, mid)),
+      RoomSide.above => (FloorPoint(mid, o.bottom), FloorPoint(mid, room.y)),
+      RoomSide.below => (FloorPoint(mid, room.bottom), FloorPoint(mid, o.y)),
+    };
+    final pa = transform.toPx(a);
+    final pb = transform.toPx(b);
+    final line = Paint()
+      ..color = colors.gapLine
+      ..strokeWidth = 2;
+    canvas.drawLine(pa, pb, line);
+    final tick = horizontal ? const Offset(0, _gapTickPx) : const Offset(_gapTickPx, 0);
+    for (final end in [pa, pb]) {
+      canvas.drawLine(end - tick, end + tick, line);
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: '${_m(gap.meters)} m',
+        style: textStyle.copyWith(color: colors.gapLine, fontWeight: FontWeight.w700),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final center = (pa + pb) / 2;
+    final box = Rect.fromCenter(
+      center: center,
+      width: painter.width + 8,
+      height: painter.height + 4,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(box, const Radius.circular(4)),
+      Paint()..color = colors.labelBackground,
+    );
+    painter.paint(canvas, center - Offset(painter.width / 2, painter.height / 2));
+  }
+
+  /// Out-of-range spot: hollow ring with a cross.
+  void _noSignal(Canvas canvas, FloorPoint p) {
+    final o = transform.toPx(p);
+    final paint = Paint()
+      ..color = colors.text
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+    canvas.drawCircle(o, 8, paint);
+    const d = 4.0;
+    canvas.drawLine(o + const Offset(-d, -d), o + const Offset(d, d), paint);
+    canvas.drawLine(o + const Offset(-d, d), o + const Offset(d, -d), paint);
   }
 
   void _router(Canvas canvas, FloorPoint p) {
@@ -377,6 +491,8 @@ class _SketchPainter extends CustomPainter {
       old.layout != layout ||
       old.selectedRoomId != selectedRoomId ||
       old.points != points ||
+      old.noSignalPoints != noSignalPoints ||
+      old.gapRoomId != gapRoomId ||
       old.marker != marker ||
       old.labelledPins != labelledPins ||
       old.transform != transform;

@@ -13,6 +13,11 @@ const int gaugeMaxDbm = -30;
 const double _startAngle = 150 * math.pi / 180;
 const double _sweepAngle = 240 * math.pi / 180;
 
+/// Side inset of the gauge text: this share of the gauge width, at most
+/// [_maxTextInsetPx], so the text stays inside the ring.
+const double _textInsetFraction = 0.2;
+const double _maxTextInsetPx = 48;
+
 /// What the gauge shows in its centre.
 sealed class GaugeReading {
   const GaugeReading();
@@ -44,20 +49,24 @@ class SignalGauge extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final reading = this.reading;
-    final (int? rssi, String title, String detail, String semantics) =
-        switch (reading) {
+    final (
+      int? rssi,
+      String title,
+      String detail,
+      String semantics,
+    ) = switch (reading) {
       GaugeSignal(:final rssiDbm, :final bandLabel) => (
-          rssiDbm,
-          signalQualityFor(rssiDbm).label,
-          [formatDbm(rssiDbm), ?bandLabel].join('  ·  '),
-          'Signal: ${signalQualityFor(rssiDbm).label}, ${formatDbm(rssiDbm)}',
-        ),
+        rssiDbm,
+        signalQualityFor(rssiDbm).label,
+        [formatDbm(rssiDbm), ?bandLabel].join('  ·  '),
+        'Signal: ${signalQualityFor(rssiDbm).label}, ${formatDbm(rssiDbm)}',
+      ),
       GaugeMessage(:final title, :final detail) => (
-          null,
-          title,
-          detail,
-          '$title. $detail',
-        ),
+        null,
+        title,
+        detail,
+        '$title. $detail',
+      ),
     };
     final animate = active && !MediaQuery.of(context).disableAnimations;
 
@@ -88,30 +97,50 @@ class SignalGauge extends StatelessWidget {
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 48),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FittedBox(
-                    child: Text(
-                      title,
-                      style: textTheme.displayMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: scheme.onSurface,
+            // The text keeps its wrap width and scales down as a block when
+            // the gauge is small (sketch scan), so it never overflows.
+            Positioned.fill(
+              child: LayoutBuilder(
+                builder: (context, box) {
+                  final pad = math.min(
+                    _maxTextInsetPx,
+                    box.maxWidth * _textInsetFraction,
+                  );
+                  return Padding(
+                    padding: EdgeInsets.all(pad),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: SizedBox(
+                        width: box.maxWidth - 2 * pad,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            FittedBox(
+                              child: Text(
+                                title,
+                                style: textTheme.displayMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: scheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              detail,
+                              textAlign: TextAlign.center,
+                              style: textTheme.titleMedium?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    detail,
-                    textAlign: TextAlign.center,
-                    style: textTheme.titleMedium?.copyWith(
-                      color: scheme.onSurfaceVariant,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ],
+                  );
+                },
               ),
             ),
           ],
@@ -183,7 +212,13 @@ class _GaugePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     canvas.drawArc(arcRect, _startAngle, _sweepAngle, false, base);
 
-    final edges = [gaugeMinDbm, weakMinDbm, goodMinDbm, excellentMinDbm, gaugeMaxDbm];
+    final edges = [
+      gaugeMinDbm,
+      weakMinDbm,
+      goodMinDbm,
+      excellentMinDbm,
+      gaugeMaxDbm,
+    ];
     const bands = [
       SignalQuality.deadZone,
       SignalQuality.weak,

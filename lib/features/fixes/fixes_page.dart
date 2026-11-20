@@ -34,6 +34,19 @@ class FixesData {
   final bool modelUsable;
 }
 
+String tierLabel(CostTier tier) => switch (tier) {
+      CostTier.free => 'Free',
+      CostTier.lowCost => 'Low cost',
+      CostTier.higherCost => 'Higher cost',
+    };
+
+String evidenceLabel(Evidence evidence) => switch (evidence) {
+      Evidence.measured => 'Measured',
+      Evidence.measuredRelative => 'Measured (relative)',
+      Evidence.predicted => 'Predicted',
+      Evidence.notEstimated => 'Not estimated',
+    };
+
 /// Builds the ranked fixes for a saved scan (SPEC.md §9).
 final fixesProvider = FutureProvider.family<FixesData, MappableScan>((ref, item) async {
   final whatIf = await ref.watch(whatIfProvider(item).future);
@@ -174,17 +187,8 @@ class _FixCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final tier = switch (fix.tier) {
-      CostTier.free => 'Free',
-      CostTier.lowCost => 'Low cost',
-      CostTier.higherCost => 'Higher cost',
-    };
-    final evidence = switch (fix.evidence) {
-      Evidence.measured => 'Measured',
-      Evidence.measuredRelative => 'Measured (relative)',
-      Evidence.predicted => 'Predicted',
-      Evidence.notEstimated => 'Not estimated',
-    };
+    final tier = tierLabel(fix.tier);
+    final evidence = evidenceLabel(fix.evidence);
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(cardRadius),

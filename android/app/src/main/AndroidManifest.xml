@@ -36,6 +36,17 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- Shares the report image from cache/reports/ only, with a
+             one-time read grant to the app the user picks (SPEC.md §9). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.reports"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/report_paths" />
+        </provider>
         <!-- AR Optional: the app stays installable on phones without ARCore
              and falls back to signal-only / manual mode (SPEC.md §2, §10). -->
         <meta-data

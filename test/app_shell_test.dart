@@ -109,4 +109,36 @@ void main() {
     );
     expect(currentMode(tester), ThemeMode.light);
   });
+
+  group('watch-style design', () {
+    testWidgets('floating tab bar switches tabs and marks the selected one', (tester) async {
+      final handle = tester.ensureSemantics();
+      await pumpSagap(tester);
+      void expectSelected(String label, bool selected) => expect(
+            tester.getSemantics(find.bySemanticsLabel('$label tab')),
+            isSemantics(isButton: true, isSelected: selected),
+          );
+
+      expectSelected('Scan', true);
+      expectSelected('Map', false);
+      await tester.tap(find.text('Map'));
+      await tester.pumpAndSettle();
+      expect(find.text('No map yet'), findsOneWidget);
+      expectSelected('Map', true);
+      expectSelected('Scan', false);
+      handle.dispose();
+    });
+
+    testWidgets('Scan greets by time of day, only when idle', (tester) async {
+      final source = FakeSignalSource();
+      await pumpSagap(tester, source: source);
+      source.emit(connectedReading(1000, -60));
+      await tester.pump(const Duration(milliseconds: 700));
+      // testNow is 14:05.
+      expect(find.text('Good afternoon'), findsOneWidget);
+      await tester.tap(find.text('Start scan'));
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(find.text('Good afternoon'), findsNothing);
+    });
+  });
 }

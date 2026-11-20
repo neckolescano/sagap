@@ -11,8 +11,12 @@ import '../../domain/path_track.dart';
 import '../common/empty_state.dart';
 import '../common/signal_legend.dart';
 import '../fixes/fixes_page.dart';
+import '../report/report_page.dart';
 import 'heatmap_view.dart';
 import 'map_controller.dart';
+
+/// A tap this close to an out-of-range spot reports that spot, in meters.
+const double outOfRangeTapRadiusM = 0.5;
 
 /// Map tab (S8): heatmap of a saved AR or sketch scan.
 class MapPage extends ConsumerWidget {
@@ -22,30 +26,43 @@ class MapPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final scans = ref.watch(mappableScansProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Map')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-        children: [
-          switch (scans) {
-            AsyncData(:final value) when value.isEmpty => const EmptyState(
-                icon: Icons.map_outlined,
-                title: 'No map yet',
-                message: 'Save a scan made with a room sketch or AR, '
-                    'and its map shows up here.',
-              ),
-            AsyncData(:final value) => _MapForScans(scans: value),
-            AsyncError(:final error) => EmptyState(
-                icon: Icons.error_outline,
-                title: "Couldn't load your scans",
-                message: '$error',
-              ),
-            _ => const Padding(
-                padding: EdgeInsets.all(32),
-                child: Center(child: CircularProgressIndicator()),
-              ),
-          },
-          const SizedBox(height: 12),
-          const _LegendCard(),
+      body: CustomScrollView(
+        slivers: [
+          const SliverAppBar.large(title: Text('Map')),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              8,
+              16,
+              tabContentBottomPadding(context),
+            ),
+            sliver: SliverList.list(
+              children: [
+                switch (scans) {
+                  AsyncData(:final value) when value.isEmpty =>
+                    const EmptyState(
+                      icon: Icons.map_outlined,
+                      title: 'No map yet',
+                      message:
+                          'Save a scan made with a room sketch or AR, '
+                          'and its map shows up here.',
+                    ),
+                  AsyncData(:final value) => _MapForScans(scans: value),
+                  AsyncError(:final error) => EmptyState(
+                    icon: Icons.error_outline,
+                    title: "Couldn't load your scans",
+                    message: '$error',
+                  ),
+                  _ => const Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                },
+                const SizedBox(height: 12),
+                const _LegendCard(),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -67,7 +84,8 @@ class _MapForScansState extends ConsumerState<_MapForScans> {
   @override
   Widget build(BuildContext context) {
     final selectedId = ref.watch(selectedMapScanProvider);
-    final current = widget.scans.where((s) => s.scan.id == selectedId).firstOrNull ??
+    final current =
+        widget.scans.where((s) => s.scan.id == selectedId).firstOrNull ??
         widget.scans.first;
     final data = ref.watch(mapDataProvider(current));
 
@@ -97,30 +115,42 @@ class _MapForScansState extends ConsumerState<_MapForScans> {
         const SizedBox(height: 12),
         switch (data) {
           AsyncData(:final value) => Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _MapCard(
-                  data: value,
-                  tapped: _tapped,
-                  onTap: (p) => setState(() => _tapped = p),
-                ),
-                if (!value.heatmap.isEmpty) ...[
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute<void>(builder: (_) => FixesPage(item: current)),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _MapCard(
+                data: value,
+                tapped: _tapped,
+                onTap: (p) => setState(() => _tapped = p),
+              ),
+              if (!value.heatmap.isEmpty) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => FixesPage(item: current),
                     ),
-                    icon: const Icon(Icons.build_outlined),
-                    label: const Text('See fixes'),
                   ),
-                ],
+                  icon: const Icon(Icons.build_outlined),
+                  label: const Text('See fixes'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ReportPage(item: current),
+                    ),
+                  ),
+                  icon: const Icon(Icons.ios_share),
+                  label: const Text('Make a report'),
+                ),
               ],
-            ),
+            ],
+          ),
           AsyncError(:final error) => Text("Couldn't build the map: $error"),
           _ => const SizedBox(
-              height: 200,
-              child: Center(child: CircularProgressIndicator()),
-            ),
+            height: 200,
+            child: Center(child: CircularProgressIndicator()),
+          ),
         },
       ],
     );
@@ -128,7 +158,11 @@ class _MapForScansState extends ConsumerState<_MapForScans> {
 }
 
 class _MapCard extends StatelessWidget {
-  const _MapCard({required this.data, required this.tapped, required this.onTap});
+  const _MapCard({
+    required this.data,
+    required this.tapped,
+    required this.onTap,
+  });
 
   final MapData data;
   final FloorPoint? tapped;
@@ -158,13 +192,15 @@ class _MapCard extends StatelessWidget {
               child: AspectRatio(
                 aspectRatio: 1,
                 child: Semantics(
-                  label: 'Signal heatmap. ${heatmap.measuredCount} measured areas, '
+                  label:
+                      'Signal heatmap. ${heatmap.measuredCount} measured areas, '
                       '${heatmap.predictedCount} predicted. Tap to inspect a spot.',
                   child: HeatmapView(
                     heatmap: heatmap,
                     layout: data.layout,
                     selected: tapped,
                     onTapPoint: onTap,
+                    noSignalPoints: data.noSignalSpots,
                   ),
                 ),
               ),
@@ -173,14 +209,15 @@ class _MapCard extends StatelessWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                _cellText(tapped, cell),
+                _cellText(tapped, cell, data.noSignalSpots),
                 style: textTheme.titleMedium,
               ),
             ),
             const SizedBox(height: 4),
             Text(
               'Measured ${heatmap.measuredCount} · predicted ${heatmap.predictedCount} '
-              '(${_m(heatmap.cellM)} m squares)',
+              '(${_m(heatmap.cellM)} m squares)'
+              '${data.noSignalSpots.isEmpty ? '' : ' · ${data.noSignalSpots.length} out of range'}',
               style: textTheme.bodyMedium?.copyWith(color: muted),
             ),
           ],
@@ -189,10 +226,18 @@ class _MapCard extends StatelessWidget {
     );
   }
 
-  static String _m(double v) => v == v.roundToDouble() ? v.toStringAsFixed(0) : '$v';
+  static String _m(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : '$v';
 
-  static String _cellText(FloorPoint? tapped, HeatCell? cell) {
+  static String _cellText(
+    FloorPoint? tapped,
+    HeatCell? cell,
+    List<FloorPoint> noSignal,
+  ) {
     if (tapped == null) return 'Tap the map to see a spot’s signal.';
+    if (noSignal.any((p) => p.distanceTo(tapped) <= outOfRangeTapRadiusM)) {
+      return 'Out of range · no Wi-Fi connection here';
+    }
     if (cell == null) return 'Not mapped: too far from where you recorded.';
     final dbm = cell.dbm.round().clamp(validRssiMinDbm, validRssiMaxDbm);
     final word = signalQualityFor(dbm).label;
@@ -235,7 +280,26 @@ class _LegendCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text('Faded = predicted', style: textTheme.titleMedium),
+                  child: Text(
+                    'Faded = predicted',
+                    style: textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const SizedBox(
+                  width: 28,
+                  child: Icon(Icons.cancel_outlined, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Crossed ring = out of range',
+                    style: textTheme.titleMedium,
+                  ),
                 ),
               ],
             ),

@@ -7,6 +7,7 @@ import '../../core/theme/signal_pattern.dart';
 import '../../data/scan_repository.dart';
 import '../../domain/scan_record.dart';
 import '../common/empty_state.dart';
+import '../compare/compare_page.dart';
 import '../hotspot/hotspot_test_page.dart';
 import '../scan/manual_controller.dart';
 import '../scan/save_scan_dialog.dart';
@@ -27,6 +28,13 @@ class HomeDetailPage extends ConsumerWidget {
       appBar: AppBar(
         title: Text(home?.name ?? 'Home'),
         actions: [
+          IconButton(
+            tooltip: 'Before and after',
+            icon: const Icon(Icons.compare_arrows),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => ComparePage(homeId: homeId)),
+            ),
+          ),
           IconButton(
             tooltip: 'Hotspot test',
             icon: const Icon(Icons.laptop_outlined),

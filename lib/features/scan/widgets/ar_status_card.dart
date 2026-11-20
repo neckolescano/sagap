@@ -64,8 +64,7 @@ class _ArStatusCardState extends ConsumerState<ArStatusCard> {
           ArReadiness.unsupported => const _StatusTile(
               icon: Icons.info_outline,
               title: "This phone doesn't support AR",
-              message: 'Sagap records your signal without position tracking. '
-                  'Room sketching is coming.',
+              message: 'Use a room sketch below to map where the signal is.',
             ),
           ArReadiness.unknown => _StatusTile(
               icon: Icons.help_outline,

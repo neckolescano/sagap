@@ -37,10 +37,12 @@ FloorPoint _center(Heatmap map, int col, int row) {
   return FloorPoint(o.x + map.cellM / 2, o.y + map.cellM / 2);
 }
 
+/// Outside rooms (yard, neighbour) are never router spots and don't count
+/// toward dead-zone area.
 bool _inHome(Heatmap base, HomeLayout layout, int col, int row) =>
-    layout.rooms.isEmpty
+    layout.homeRooms.isEmpty
         ? base.cell(col, row) != null
-        : layout.roomAt(_center(base, col, row)) != null;
+        : layout.homeRoomAt(_center(base, col, row)) != null;
 
 SignalQuality _quality(double dbm) =>
     signalQualityFor(dbm.round().clamp(validRssiMinDbm, validRssiMaxDbm));

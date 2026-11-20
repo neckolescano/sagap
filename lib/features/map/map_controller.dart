@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/scan_repository.dart';
 import '../../domain/heatmap.dart';
 import '../../domain/home_layout.dart';
+import '../../domain/path_track.dart';
 import '../../domain/scan_record.dart';
 
 /// A saved scan that has positions, with its home.
@@ -51,10 +52,18 @@ final selectedMapScanProvider =
 
 /// Heatmap plus what to draw on top of it.
 class MapData {
-  const MapData({required this.heatmap, required this.layout, required this.samples});
+  const MapData({
+    required this.heatmap,
+    required this.layout,
+    required this.samples,
+    this.noSignalSpots = const [],
+  });
   final Heatmap heatmap;
   final HomeLayout layout;
   final List<StoredSample> samples;
+
+  /// Sketch spots with no Wi-Fi connection (out of range).
+  final List<FloorPoint> noSignalSpots;
 }
 
 /// Builds the heatmap for one scan (SPEC.md §8). Runs on the UI isolate;
@@ -64,14 +73,16 @@ final mapDataProvider = FutureProvider.family<MapData, MappableScan>((ref, item)
   final samples = await repo.samplesForScan(item.scan.id);
   final layout = await repo.layoutForHome(item.home.id);
   final manual = item.scan.mode == ScanMode.manual;
+  final noSignal = manual ? await repo.noSignalSpotsForScan(item.scan.id) : const <FloorPoint>[];
   return MapData(
     heatmap: buildHeatmap(
       samples,
       minSamplesMeasured:
           manual ? HeatmapSettings.minSamplesManual : HeatmapSettings.minSamplesAr,
-      extraBounds: manual ? roomCorners(layout) : const [],
+      extraBounds: manual ? [...roomCorners(layout), ...noSignal] : const [],
     ),
     layout: manual ? layout : const HomeLayout(),
     samples: samples,
+    noSignalSpots: noSignal,
   );
 }, retry: (_, _) => null);

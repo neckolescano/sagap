@@ -64,6 +64,11 @@ class WifiSignalStreamHandler(context: Context) : EventChannel.StreamHandler {
     }
 
     override fun onCancel(arguments: Any?) {
+        stop()
+    }
+
+    /** Stops readings and releases the network callback. Safe to call twice. */
+    fun stop() {
         mainHandler.removeCallbacks(tick)
         networkCallback?.let { callback ->
             connectivityManager?.unregisterNetworkCallback(callback)

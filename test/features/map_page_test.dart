@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sagap/domain/home_layout.dart';
+import 'package:sagap/domain/path_track.dart';
 import 'package:sagap/domain/scan_record.dart';
 import 'package:sagap/features/map/heatmap_view.dart';
 
@@ -61,6 +62,40 @@ void main() {
     await tester.tap(find.byType(HeatmapView));
     await tester.pumpAndSettle();
     expect(find.text('Good · −65 dBm · predicted'), findsOneWidget);
+  });
+
+  testWidgets('out-of-range spots are counted and reported on tap', (tester) async {
+    final repo = MemoryScanRepository();
+    final home = await repo.createHome('My home', testNow);
+    await repo.saveRoom(
+      home,
+      const SketchRoom(id: -1, name: 'Sala', x: 0, y: 0, width: 4, length: 3),
+    );
+    await repo.saveScan(
+      home,
+      ScanRecord(
+        startedAt: testNow,
+        durationMs: 60000,
+        mode: ScanMode.manual,
+        samples: const [
+          StoredSample(tMs: 1, rssiDbm: -55, xM: 1, yM: 1),
+          StoredSample(tMs: 2, rssiDbm: -75, xM: 3, yM: 2),
+        ],
+        path: const [],
+        noSignalSpots: const [FloorPoint(2, 1.5)],
+      ),
+    );
+    await pumpSagap(tester, repo: repo);
+    await openMap(tester);
+
+    expect(find.textContaining('· 1 out of range'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Crossed ring = out of range'), 200);
+    expect(find.text('Crossed ring = out of range'), findsOneWidget);
+    await tester.scrollUntilVisible(find.byType(HeatmapView), -200);
+    // Map centre (2, 1.5) m is the out-of-range spot.
+    await tester.tap(find.byType(HeatmapView));
+    await tester.pumpAndSettle();
+    expect(find.text('Out of range · no Wi-Fi connection here'), findsOneWidget);
   });
 
   testWidgets('scan picker lists positioned scans only, newest first',

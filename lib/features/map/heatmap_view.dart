@@ -22,7 +22,11 @@ class HeatmapView extends StatelessWidget {
     this.onTapPoint,
     this.onDragPoint,
     this.pins = const [],
+    this.noSignalPoints = const [],
   });
+
+  /// Out-of-range sketch spots, drawn as crossed rings.
+  final List<FloorPoint> noSignalPoints;
 
   /// Called with the finger's position in meters while dragging.
   final ValueChanged<FloorPoint>? onDragPoint;
@@ -89,6 +93,7 @@ class HeatmapView extends StatelessWidget {
                   layout: layout,
                   transparentRooms: true,
                   fixedTransform: transform,
+                  noSignalPoints: noSignalPoints,
                 ),
               ),
             ),

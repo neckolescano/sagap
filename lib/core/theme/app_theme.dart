@@ -6,7 +6,12 @@ import 'app_colors.dart';
 const double primaryActionHeight = 64;
 
 /// Corner radius for cards and sheets.
-const double cardRadius = 20;
+const double cardRadius = 26;
+
+/// Bottom padding for a tab's scrolling content: the floating tab bar's
+/// height (Scaffold.extendBody puts it in the MediaQuery padding) plus a gap.
+double tabContentBottomPadding(BuildContext context) =>
+    MediaQuery.paddingOf(context).bottom + 16;
 
 /// Material 3 themes built from [AppColors]. Dark is the default.
 abstract final class AppTheme {
@@ -44,18 +49,28 @@ abstract final class AppTheme {
 
   static ThemeData _build(ColorScheme scheme) {
     final base = ThemeData(colorScheme: scheme, useMaterial3: true);
-    const actionShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
-    );
+    // Pill-shaped actions and borderless rounded cards (watch-app style).
+    const actionShape = StadiumBorder();
     const actionSize = Size(64, primaryActionHeight);
     const actionText = TextStyle(fontSize: 18, fontWeight: FontWeight.w600);
+    final textTheme = base.textTheme.copyWith(
+      // Large collapsing page titles (SliverAppBar.large) use this.
+      headlineMedium: base.textTheme.headlineMedium?.copyWith(
+        fontWeight: FontWeight.w800,
+        letterSpacing: -0.5,
+      ),
+      titleLarge: base.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+    );
     return base.copyWith(
+      textTheme: textTheme,
       scaffoldBackgroundColor: scheme.surface,
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         surfaceTintColor: Colors.transparent,
-        centerTitle: false,
-        titleTextStyle: base.textTheme.titleLarge?.copyWith(
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        titleTextStyle: textTheme.titleMedium?.copyWith(
+          fontSize: 18,
           fontWeight: FontWeight.w700,
           color: scheme.onSurface,
         ),
@@ -64,9 +79,8 @@ abstract final class AppTheme {
         color: scheme.surfaceContainer,
         elevation: 0,
         margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: const BorderRadius.all(Radius.circular(cardRadius)),
-          side: BorderSide(color: scheme.outlineVariant),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(

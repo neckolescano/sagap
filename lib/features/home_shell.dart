@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'common/floating_nav_bar.dart';
 import 'homes/homes_page.dart';
 import 'map/map_page.dart';
 import 'scan/ar_controller.dart';
@@ -37,27 +38,30 @@ class HomeShell extends ConsumerWidget {
     final index = ref.watch(selectedTabProvider);
 
     return Scaffold(
+      // Content scrolls under the floating bar; pages keep
+      // [floatingNavClearance] at the bottom so nothing ends up hidden.
+      extendBody: true,
       body: IndexedStack(
         index: index,
         children: const [ScanPage(), MapPage(), HomesPage()],
       ),
-      bottomNavigationBar: NavigationBar(
+      bottomNavigationBar: FloatingNavBar(
         selectedIndex: index,
-        onDestinationSelected: ref.read(selectedTabProvider.notifier).select,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.wifi_find_outlined),
-            selectedIcon: Icon(Icons.wifi_find),
+        onSelected: ref.read(selectedTabProvider.notifier).select,
+        items: const [
+          FloatingNavItem(
+            icon: Icons.wifi_find_outlined,
+            selectedIcon: Icons.wifi_find,
             label: 'Scan',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            selectedIcon: Icon(Icons.map),
+          FloatingNavItem(
+            icon: Icons.map_outlined,
+            selectedIcon: Icons.map,
             label: 'Map',
           ),
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+          FloatingNavItem(
+            icon: Icons.home_outlined,
+            selectedIcon: Icons.home,
             label: 'Homes',
           ),
         ],

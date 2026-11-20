@@ -46,10 +46,16 @@ class ScanRecord {
     this.walkedM,
     this.loopErrorM,
     this.channelChecks = const [],
+    this.noSignalSpots = const [],
   });
 
   /// Nearby-network aggregates from Start and Finish (may be empty).
   final List<ChannelCheck> channelChecks;
+
+  /// Sketch spots where the phone had no connection to the Wi-Fi for a
+  /// whole recording (out of range). They carry no dBm, so the heatmap,
+  /// signal model and median ignore them; the map shows them as markers.
+  final List<FloorPoint> noSignalSpots;
 
   final DateTime startedAt;
   final int durationMs;

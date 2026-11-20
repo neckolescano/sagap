@@ -46,6 +46,8 @@ void main() {
     await openSettings(tester);
 
     await tester.scrollUntilVisible(find.text('Delete all data'), 200);
+    await tester.ensureVisible(find.text('Delete all data'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Delete all data'));
     await tester.pumpAndSettle();
     expect(find.text('Delete all data?'), findsOneWidget);

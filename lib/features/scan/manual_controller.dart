@@ -19,27 +19,54 @@ class ManualHome extends Notifier<int?> {
 
 final manualHomeProvider = NotifierProvider<ManualHome, int?>(ManualHome.new);
 
+/// One recorded sketch spot: a measured sample, or out of range.
+class ManualSpot {
+  const ManualSpot.measured(StoredSample this.sample) : _point = null;
+  const ManualSpot.noSignal(FloorPoint point)
+      : sample = null,
+        _point = point;
+
+  /// The measured median; null when the phone had no connection.
+  final StoredSample? sample;
+  final FloorPoint? _point;
+
+  bool get isNoSignal => sample == null;
+
+  FloorPoint get location => switch (sample) {
+        final s? => FloorPoint(s.xM!, s.yM!),
+        null => _point!,
+      };
+}
+
 /// Spots recorded during a manual scan (S5).
 class ManualCapture {
   const ManualCapture({
-    this.points = const [],
+    this.spots = const [],
     this.position,
     this.collecting,
   });
 
-  /// Recorded spots, each the median of [manualReadingsPerSpot] readings.
-  final List<StoredSample> points;
+  /// Recorded spots in the order they were taken (Undo removes the last).
+  final List<ManualSpot> spots;
 
   /// Where the user last tapped ("you are here").
   final FloorPoint? position;
 
-  /// Readings gathered for the spot being recorded; null when idle.
-  final List<int>? collecting;
+  /// Readings gathered for the spot being recorded; a null entry means
+  /// "not connected". Null when idle.
+  final List<int?>? collecting;
 
   bool get isCollecting => collecting != null;
 
-  List<FloorPoint> get pointLocations =>
-      [for (final p in points) FloorPoint(p.xM!, p.yM!)];
+  /// Measured spots, each the median of its connected readings.
+  List<StoredSample> get points => [for (final s in spots) ?s.sample];
+
+  /// Spots where every reading had no connection.
+  List<FloorPoint> get noSignalSpots =>
+      [for (final s in spots) if (s.isNoSignal) s.location];
+
+  /// Every recorded spot, measured or not, for room coverage.
+  List<FloorPoint> get pointLocations => [for (final s in spots) s.location];
 }
 
 class ManualCaptureController extends Notifier<ManualCapture> {
@@ -47,26 +74,28 @@ class ManualCaptureController extends Notifier<ManualCapture> {
   ManualCapture build() {
     ref.listen(liveSignalProvider, (_, next) {
       final reading = next.value;
-      final rssi = reading?.validRssi;
       final gathered = state.collecting;
       final position = state.position;
       final recording = ref.read(scanControllerProvider).status == ScanStatus.recording;
-      if (reading == null || rssi == null || gathered == null || position == null || !recording) {
-        return;
-      }
-      final updated = [...gathered, rssi];
+      if (reading == null || gathered == null || position == null || !recording) return;
+      final updated = [...gathered, reading.validRssi];
       if (updated.length < manualReadingsPerSpot) {
-        state = ManualCapture(points: state.points, position: position, collecting: updated);
+        state = ManualCapture(spots: state.spots, position: position, collecting: updated);
         return;
       }
-      final point = StoredSample(
-        tMs: reading.tMs,
-        rssiDbm: medianDbm(updated),
-        freqMhz: reading.freqMhz,
-        xM: position.x,
-        yM: position.y,
-      );
-      state = ManualCapture(points: [...state.points, point], position: position);
+      // Out of range only if the phone was off the Wi-Fi for the whole
+      // recording; otherwise the connected readings give the median.
+      final connected = [for (final r in updated) ?r];
+      final spot = connected.isEmpty
+          ? ManualSpot.noSignal(position)
+          : ManualSpot.measured(StoredSample(
+              tMs: reading.tMs,
+              rssiDbm: medianDbm(connected),
+              freqMhz: reading.freqMhz,
+              xM: position.x,
+              yM: position.y,
+            ));
+      state = ManualCapture(spots: [...state.spots, spot], position: position);
     });
     ref.listen(scanControllerProvider.select((s) => s.status), (previous, status) {
       final freshStart = status == ScanStatus.recording && previous != ScanStatus.paused;
@@ -79,22 +108,21 @@ class ManualCaptureController extends Notifier<ManualCapture> {
   /// Sets "you are here". Ignored while a spot is being recorded.
   void setPosition(FloorPoint p) {
     if (state.isCollecting) return;
-    state = ManualCapture(points: state.points, position: p);
+    state = ManualCapture(spots: state.spots, position: p);
   }
 
-  /// Starts gathering readings at the current position.
+  /// Starts gathering readings at the current position, connected or not.
   void recordHere() {
     if (state.position == null || state.isCollecting) return;
-    state = ManualCapture(points: state.points, position: state.position, collecting: const []);
+    state = ManualCapture(spots: state.spots, position: state.position, collecting: const []);
   }
 
-  void cancel() =>
-      state = ManualCapture(points: state.points, position: state.position);
+  void cancel() => state = ManualCapture(spots: state.spots, position: state.position);
 
   void undoLast() {
-    if (state.points.isEmpty || state.isCollecting) return;
+    if (state.spots.isEmpty || state.isCollecting) return;
     state = ManualCapture(
-      points: state.points.sublist(0, state.points.length - 1),
+      spots: state.spots.sublist(0, state.spots.length - 1),
       position: state.position,
     );
   }

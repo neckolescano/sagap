@@ -14,7 +14,7 @@ Version 0.1 · 2026-11-19 · Status: draft for review · SPEC.md is the source o
 
 Sagap maps a home's Wi-Fi from one walk-through. ARCore tracks the phone's position in meters while the app logs the connected network's signal about once per second [D]. The result is a floor sketch plus a heatmap. The app then gives cost-ranked fixes: free (move router, channel, band, antennas) → cheap extender → mesh [D]. Sagap **measures and advises; it never claims to boost Wi-Fi**. Android only, fully offline, no accounts, no ads, no cloud [D].
 
-**Out of MVP:** iOS, accounts, sync, ads, floor-plan upload [D]. Before/after proof, shareable Taglish report, step-counter fallback, Gaussian-process heatmap, multi-floor [J: Later; see §15].
+**Out of MVP:** iOS, accounts, sync, ads, floor-plan upload [D]. Taglish wording of the report, step-counter fallback, Gaussian-process heatmap, multi-floor [J: Later; see §15].
 
 ## 2. Architecture and key technical choices
 
@@ -58,7 +58,7 @@ Bottom tabs: **Scan · Map · Homes** [D]. The first launch shows the guide, the
 | S3 | Scan – ready | Pick home, check readiness | Home picker / "New home", mode badge (AR or Manual), connection word, **Start** (bottom, large) | Scan tab root → S4 or S5 |
 | S4 | Scan – live (AR) | Record the walk | Camera view, **big live signal meter** (word + small dBm), **mini-map** of walked path coloured by signal, tracking banner, Mark corner, Add priority spot, **Pause / Finish** in thumb zone [D] | S3 → S7. On AR loss → offer S5 |
 | S5 | Scan – live (Manual) | Fallback recording | Room sketch canvas, "I'm here — Record" (5 s average), big meter, Pause / Finish | S3 or S6 → S7 |
-| S6 | Room sketch editor | Hand-drawn rooms [D] | Add rectangle, name, width × length (m), drag/snap, mark router, priority spots | S3 (manual) → S5 |
+| S6 | Room sketch editor | Hand-drawn rooms [D] | Add rectangle, name, width × length (m), drag/snap, gap labels, nudge arrows, Place beside (exact gap), outside areas, mark router, priority spots | S3 (manual) → S5 |
 | S7 | Scan summary | Confirm and save | Area covered, samples, dead zones found, channel check result, loop-closure quality, Save / Discard | S4/S5 → Map tab (S8) |
 | S8 | Map | Heatmap of a scan | Heatmap (measured **solid**, predicted **hatched + faded** [D]), legend with words + patterns, layer toggles (path, walls, spots), tap cell → "Weak · −74 dBm · measured", **Fixes**, **What if** | Map tab root → S9, S10, S11 |
 | S9 | Fixes | Recommendations | Cards ranked by cost (§9): what · where (map pin) · expected improvement + evidence tag | S8 → card tap → S8 with pin |
@@ -84,9 +84,11 @@ Bottom tabs: **Scan · Map · Homes** [D]. The first launch shows the guide, the
 - v3 (M6): `rooms` (home_id, name, x, y, w, h), `priority_spots` (home_id, label, x, y), and `homes.router_x/y`. The router lives on the home's sketch, not on each scan. Scan mode `manual` added.
 - v4 (M7): `channel_checks` (scan_id, json). The JSON holds only the own frequency, whether results were fresh, and the strong-neighbour count per frequency.
 - v5 (M9): `hotspot_tests` (home_id, started_at, json: candidate labels and points, plus per-spot medians). Stored per home rather than as a scan with `purpose = hotspot`, since a test has no walk.
+- v6 (sketch distances, 2026-11-21): `rooms.outside` (0/1, default 0) and `no_signal_spots` (scan_id, x_m, y_m). Out-of-range spots have no dBm, so they live in their own table rather than as a fake value in `samples`.
 | `path_points` | scan_id, t_ms, x_m, y_m (mini-map; 2 Hz) |
 | `walls` | id, home_id, x1, y1, x2, y2, source (`traced`/`sketch`) |
-| `rooms` | id, home_id, name, x, y, w, h (manual mode) |
+| `rooms` | id, home_id, name, x, y, w, h, outside (manual mode) |
+| `no_signal_spots` | id, scan_id, x_m, y_m (sketch spots with no Wi-Fi connection) |
 | `priority_spots` | id, home_id, label, x, y |
 | `channel_checks` | id, scan_id, t, own_freq_mhz, per-channel counts of strong neighbours (aggregates only) |
 
@@ -232,7 +234,7 @@ Upgrade to a Gaussian process later [D].
 ## 11. UI theme and accessibility
 
 - **Dark first** "signal/radar" theme [D]:
-  - background `#0A0F1C` (near-black navy), surface `#121A2B`, single accent cyan `#3DD6F5` [J]
+  - background `#000000` (true black), cards `#1C1C1E`, raised `#2C2C2E`, single accent cyan `#3DD6F5` [J; changed 2026-11-21 from navy `#0A0F1C`, see below]
   - light mode mirrors the tokens [D]
   - Material 3 `ColorScheme` with all colours as named tokens.
 - **Heatmap:** green → yellow → red [D]. Each band also has a distinct pattern and a word label, so meaning never depends on colour alone [D].
@@ -248,6 +250,14 @@ Upgrade to a Gaussian process later [D].
 - *Floor-plan heatmap* (for M5): soft blobs over room outlines, router pin, compact bottom sheet for cell details.
 - *Legend swatches:* colour + pattern (solid · dots · lines · cross-hatch) + word, shared by the legend and the heatmap.
 - *Rounded cards* (20 dp), surface-container tones, accent used only for primary actions and the active tab.
+
+**Design refresh (2026-11-21) [J].** Patterns taken from the user's screenshots of a watch companion app (layout patterns only; no artwork, icons or brand copied):
+- True-black background (light: `#F2F2F7` page, white cards), borderless cards with 26 dp corners, pill-shaped (stadium) buttons.
+- **Floating tab bar:** a blurred pill above the content with the selected tab in its own capsule and the accent colour; `Scaffold.extendBody`, so scrolling content keeps the tab bar's height as bottom padding. Tab labels cap at 1.3× text size, like Material's own bar; each tab is announced as "<name> tab", selected.
+- **Large titles:** Map and Homes use a big bold title that collapses into a centred title on scroll. Scan copies the welcome screen instead: a compact centred title, a greeting by time of day ("Good afternoon" + "Find where your Wi-Fi is weak."), then the meter as the hero and one pill button. A large title there pushed the AR and sketch cards below the fold.
+- **Homes as a gallery:** each home is a card with its name bold top-left, a preview of its room sketch (or a home icon), and a centred caption (scans · last date).
+- Kept the cyan accent rather than the screenshots' orange: orange sits next to the Weak (amber) band colour and would blur the signal colours [J].
+- Also fixed while restyling: the "doesn't support AR" card said "Room sketching is coming", although sketching has existed since M6.
 
 ## 12. Milestones (each ends with a real-phone test) [J order]
 
@@ -266,6 +276,9 @@ Upgrade to a Gaussian process later [D].
   - Sketch editor: rooms as rectangles (1–30 m, 0.5 m grid, drag to move), router, priority spots. Each edit is saved immediately (schema v3).
   - Manual scan: tap "you are here", then **Record here** = median of 5 readings. Coverage prompt for rooms with < 3 spots; Undo. Saved to the sketched home as mode `manual`.
   - Not built: the tracking-loss handoff from AR to manual mid-scan (needs an AR phone to test). A debug flag isn't needed: the dev phone has no AR.
+  - **Distances (added 2026-11-21, unit + widget tested, not yet on phone):** the selected or dragged room shows dimension lines with the clear gap to the nearest *aligned* room on each side (rooms whose spans overlap across that side; diagonal rooms get no line). The footer lists gaps ("2.0 m to Sala", "Touches Sala"), overlaps, and the straight-line distance from the room centre to the router. **Place** puts a room left of / right of / above / below another at a typed gap (0–50 m, edges lined up, snapped to 0.5 m, so 1.2 m becomes 1.0 m); the hint says one step ≈ 0.7 m [J]. Nudge arrows move a room 0.5 m.
+  - **Outside areas (same date):** a room can be marked "Outside my home" (yard, hallway, a neighbour's place), drawn dashed. Its walls count in the signal model. It is never a router candidate, is left out of dead-zone area in what-if, needs no minimum spots, and dead zones or extender spots inside it are not turned into fixes [J: you can't fix a neighbour's Wi-Fi].
+  - **Out-of-range spots (same date):** **Record here** works without a connection. If all 5 readings are disconnected, the spot is saved as out of range (crossed ring on the sketch and map; tapping it says "Out of range"). If some readings are connected, the spot is the median of those. Out-of-range spots don't feed the heatmap, model or fixes, since they have no dBm. Known limit: if the phone joins a *different* Wi-Fi at a spot, its readings count as yours, because Sagap never reads network names [J]. Measure a neighbour's place from outside or with their permission.
 - [ ] **M7 Fixes I** — extender (9A), channel check with scan budget, tips, mesh rule, ranked cards (S9). *Phone:* a real home produces cost-ordered cards; scans never exceed budget. *Built 2026-11-20 (Dart unit + widget tested; Kotlin `WifiScanHandler` not compile-checked: Gradle fails in this environment with "Unable to establish loopback connection"):*
   - **Dead zones:** ≥ 4 four-connected Dead-zone cells, measured or predicted. **Targets:** dead zones plus priority spots that are Weak or Dead.
   - **Extender:** a measured cell at −65…−60 dBm within 1.5 m of the router → target line, nearest the target. Several targets served by one spot share a card. With no spot found, the card says to walk that area again. Improvement is "not estimated: re-walk".
@@ -295,19 +308,40 @@ Upgrade to a Gaussian process later [D].
   - **Battery:** a "Long scan" card after 15 min of recording (§14).
   - **Rule tests:** AT21 (no "boost" in `lib/`); AT22 (main manifest has no `INTERNET`; debug and profile have it for Flutter tooling); no `"ssid"` or `"bssid"` keys in any Kotlin result map.
 
-**Build status (2026-11-20).**
-- **Verified on the itel S665L (Android 12):** M0 and M1 (tabs, theme, live signal without location), and the M2 fallback ("doesn't support AR").
-- **Tests:** 203 automated tests pass and `flutter analyze` is clean.
+**Additions after M10 (2026-11-21, unit + widget tested, not yet on phone):**
+- **Before and after** (notes feature 2; moved from Later): Homes → a home → compare icon. Pick two **sketch** scans of the home; newest vs the one before is the default. AR scans are excluded, because each AR walk has its own coordinate frame. Shown, all as measured changes:
+  - whole-home median, dB change and word change
+  - dead-zone area in m² (home rooms only)
+  - out-of-range spot count
+  - per home room: median of the spots recorded inside it
+  - per priority spot: the heatmap cell there, tagged "predicted" when either cell is predicted
+  - Each change reads Better / About the same / Worse with a ±3 dB band (`noticeableChangeDb`) [J: Wi-Fi varies by a few dB on its own], or "Not measured in both". The screen advises recording the same spots both times. Nothing is stored; it is computed on demand.
+- **Shareable report** (notes feature 6; format decided: **PNG image, English** [J]; Taglish stays open): Map → **Make a report**, or Compare → **Make a report** (adds the before/after section). The report contains:
+  - home name and scan date
+  - heatmap with legend
+  - summary (typical signal, dead-zone area, spot count, out-of-range count)
+  - the top 3 fixes with cost and evidence
+  - a footer saying the values are measured, predicted ones are marked, and no network name or address is included
+  - It is drawn in the light theme at 3× and handed to Android's share sheet through `sagap/share` (Kotlin `ShareHandler`): written to `cache/reports/` (older reports deleted first), exposed by an unexported `FileProvider` (authority `<appId>.reports`, cache `reports/` only) with a one-time read grant. Sagap uploads nothing; this is the only way data leaves the phone, and only when the user picks a receiving app. No new package: `androidx.core`'s `FileProvider` already ships with the Flutter/ARCore dependencies [V: present in the debug build's dex].
+- **Fix found by the 200 % text test:** with a room selected, the sketch editor footer row overflowed; the name row and **Add room** now stack.
+
+**Installable build (2026-11-21):**
+- **App icon:** adaptive vector icon (cyan signal arcs on black, plus a monochrome layer for Android 13 themed icons); no image package. Android 7.x keeps Flutter's PNG icon.
+- **Release signing:** `android/key.properties` (git-ignored, with `storeFile`, `storePassword`, `keyAlias`, `keyPassword`) is read when present; otherwise release builds use the debug key. The keystore (`*.jks`, git-ignored) and its passwords are made and kept by the developer only.
+- **Privacy note** in Settings now says scans stay on the phone, there is no account or upload, and a report leaves only when the user taps Share and picks an app.
+
+**Build status (2026-11-21).**
+- **Verified on the itel S665L (Android 12):** M0 and M1 (tabs, theme, live signal without location), the M2 fallback ("doesn't support AR"), and that the full app including Kotlin `WifiScanHandler` builds and installs (2026-11-21). **Release build (2026-11-21):** the merged release manifest has no `INTERNET` permission (AT22 holds after libraries merge in). Its only permissions are Wi-Fi state, network state, change Wi-Fi state, fine/coarse location and camera, plus AndroidX's own non-exported receiver permission. The report `FileProvider` is not exported. The release APK is 54 MB. The signal stream now stops when the activity is destroyed (it kept sending to a detached engine).
+- **Tests:** 236 automated tests pass and `flutter analyze` is clean.
 - **Not yet verified:**
-  - M3 onward on the phone, including the database migrations v1 → v5.
-  - Kotlin `WifiScanHandler` (M7/M10): never compiled, because Gradle fails in the agent environment with "Unable to establish loopback connection".
+  - M3 onward on the phone, including the database migrations v1 → v6, the sketch distance tools and out-of-range spots.
+  - Kotlin `ShareHandler` and the `FileProvider` entry: written after the last phone build, so never compiled; the share sheet itself only works on the phone.
   - AR tracking (M2) on a supported phone.
-  - The merged release manifest (do libraries add `INTERNET`?).
   - The battery measurement.
 - **Not built:**
   - M4 (AR wall tracing and the router step).
   - The AR → manual handoff mid-scan.
-  - Everything marked Later (before/after proof, Taglish report and export, Gaussian process, multi-floor).
+  - Everything marked Later (Taglish wording, Gaussian process, multi-floor, step-counter fallback).
 
 The 2–3-week target is tight for M0–M10 [J]. M0–M7 is the minimum MVP; M8–M9 may slip.
 
@@ -361,8 +395,8 @@ The 2–3-week target is tight for M0–M10 [J]. M0–M7 is the minimum MVP; M8�
 3. Android docs: one page says `neverForLocation` removes the need for FINE_LOCATION, while the same page says scan APIs still need it on 13+ [V]. The spec follows the stricter reading.
 
 **Undecided — needs your call (MVP or Later?)**
-- Before/after proof (notes feature 2)
-- Shareable Taglish report (feature 6) and the export format
+- ~~Before/after proof (notes feature 2)~~ Built 2026-11-21 (see §12).
+- ~~Shareable report (feature 6) and the export format~~ Built 2026-11-21 as an English PNG; Taglish wording still open.
 - Priority-spot weighting (feature 3)
 - UI language (English vs Taglish)
 - Multi-floor homes

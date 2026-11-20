@@ -202,6 +202,149 @@ void main() {
     expect(find.textContaining('0 spots recorded'), findsOneWidget);
   });
 
+  testWidgets('place a room an exact gap from another, then nudge it', (tester) async {
+    final repo = MemoryScanRepository();
+    await pumpSagap(tester, repo: repo);
+    await openEditorForNewHome(tester);
+    await addRoom(tester, name: 'Sala');
+    await addRoom(tester, name: 'Kitchen');
+    final homeId = repo.homesById.keys.single;
+    SketchRoom kitchen() => repo.layouts[homeId]!.rooms.firstWhere((r) => r.name == 'Kitchen');
+
+    // New rooms are auto-placed touching the previous one; Kitchen is selected.
+    expect(kitchen().x, 3.0);
+    expect(find.text('Touches Sala'), findsOneWidget);
+
+    await tester.ensureVisible(find.text('Place'));
+    await tester.tap(find.text('Place'));
+    await tester.pumpAndSettle();
+    expect(find.text('Place Kitchen'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, 'Gap between them (m)'), '60');
+    await tester.pump();
+    expect(find.text('0–50 m'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Place')).onPressed,
+      isNull,
+    );
+    await tester.enterText(find.widgetWithText(TextField, 'Gap between them (m)'), '2');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Place'));
+    await tester.pumpAndSettle();
+    expect((kitchen().x, kitchen().y), (5.0, 0.0));
+    expect(find.text('2.0 m to Sala'), findsOneWidget);
+
+    await tester.ensureVisible(find.byTooltip('Move right'));
+    await tester.tap(find.byTooltip('Move right'));
+    await tester.pumpAndSettle();
+    expect(kitchen().x, 5.5);
+    expect(find.text('2.5 m to Sala'), findsOneWidget);
+  });
+
+  testWidgets('an outside room is saved and needs no spots', (tester) async {
+    final repo = MemoryScanRepository();
+    await pumpSagap(tester, repo: repo);
+    await openEditorForNewHome(tester);
+    await tester.tap(find.text('Add room'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, 'Room name'), 'Neighbour');
+    await tester.ensureVisible(find.text('Outside my home'));
+    await tester.tap(find.text('Outside my home'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, 'Add'));
+    await tester.pumpAndSettle();
+    final homeId = repo.homesById.keys.single;
+    final room = repo.layouts[homeId]!.rooms.single;
+    expect((room.name, room.outside), ('Neighbour', true));
+    expect(repo.layouts[homeId]!.roomsNeedingPoints(const []), isEmpty);
+  });
+
+  /// Sketch one room, start a manual scan and tap where you are.
+  Future<FakeSignalSource> startManualScan(WidgetTester tester, MemoryScanRepository repo) async {
+    final source = FakeSignalSource();
+    await pumpSagap(tester, repo: repo, source: source);
+    source.emit(connectedReading(1000, -60));
+    await tester.pump(settle);
+    await openEditorForNewHome(tester);
+    await addRoom(tester, name: 'Kitchen');
+    await tester.tap(find.widgetWithText(FilledButton, 'Done'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Start scan'));
+    await tester.pump(settle);
+    await tester.tap(find.byType(SketchCanvas));
+    await tester.pump(settle);
+    return source;
+  }
+
+  testWidgets('no Wi-Fi for a whole spot saves it as out of range', (tester) async {
+    final repo = MemoryScanRepository();
+    final source = await startManualScan(tester, repo);
+
+    source.emit(disconnectedReading(2000));
+    await tester.pump(settle);
+    expect(find.text('No Wi-Fi here. Record to mark this spot Out of range.'), findsOneWidget);
+    final record = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Record here'));
+    expect(record.onPressed, isNotNull, reason: 'recording works without a connection');
+
+    await tester.tap(find.text('Record here'));
+    await tester.pump();
+    for (var i = 0; i < manualReadingsPerSpot; i++) {
+      source.emit(disconnectedReading(3000 + i * 1000));
+      await tester.pump(settle);
+    }
+    expect(
+      find.text('1 spot (1 out of range) recorded. Still needed: Kitchen 1/3'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.text('Finish'));
+    await tester.pumpAndSettle();
+    expect(find.text('1 spot recorded on the sketch, 1 out of range'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    final (_, scan) = repo.scansById.values.single;
+    expect(scan.samples, isEmpty);
+    expect(scan.noSignalSpots.single.x, closeTo(1.5, 0.01));
+    expect(scan.noSignalSpots.single.y, closeTo(1.5, 0.01));
+  });
+
+  testWidgets('a spot with some connected readings uses their median', (tester) async {
+    final repo = MemoryScanRepository();
+    final source = await startManualScan(tester, repo);
+
+    await tester.tap(find.text('Record here'));
+    await tester.pump();
+    final readings = [
+      disconnectedReading(2000),
+      connectedReading(3000, -80),
+      disconnectedReading(4000),
+      connectedReading(5000, -60),
+      connectedReading(6000, -70),
+    ];
+    for (final r in readings) {
+      source.emit(r);
+      await tester.pump(settle);
+    }
+    expect(find.textContaining('1 spot recorded'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Undo last spot'));
+    await tester.pump(settle);
+    expect(find.textContaining('0 spots recorded'), findsOneWidget);
+    await tester.tap(find.text('Record here'));
+    await tester.pump();
+    for (final r in readings) {
+      source.emit(r);
+      await tester.pump(settle);
+    }
+
+    await tester.tap(find.text('Finish'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pumpAndSettle();
+    final (_, scan) = repo.scansById.values.single;
+    expect(scan.samples.single.rssiDbm, -70);
+    expect(scan.noSignalSpots, isEmpty);
+  });
+
   testWidgets('Stop using leaves manual mode', (tester) async {
     await pumpSagap(tester, repo: MemoryScanRepository());
     await openEditorForNewHome(tester);

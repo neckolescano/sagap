@@ -100,6 +100,17 @@ void main() {
         handle.dispose();
       });
 
+      testWidgets('Before and after, and the report', (tester) async {
+        final handle = tester.ensureSemantics();
+        await pumpSagap(
+          tester,
+          repo: await withSecondWalk(await populated()),
+          initialSettings: settings(),
+        );
+        await openCompareAndReport(tester, check: () => checkGuidelines(tester));
+        handle.dispose();
+      });
+
       testWidgets('First-run guide', (tester) async {
         final handle = tester.ensureSemantics();
         await pumpSagap(tester, initialSettings: {SettingsKeys.themeMode: theme});
@@ -177,5 +188,69 @@ void main() {
         expect(find.text('Start test'), findsOneWidget);
       });
     });
+
+    testWidgets('Sketch editor with a selected room and its tools', (tester) async {
+      await atDoubleText(tester, () async {
+        await pumpSagap(tester, repo: MemoryScanRepository());
+        await tester.scrollUntilVisible(find.text('Map with a room sketch'), 200);
+        // Align it to the top, clear of the bottom Start button.
+        await tester.ensureVisible(find.text('Map with a room sketch'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Map with a room sketch'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        for (var i = 0; i < 2; i++) {
+          await tester.tap(find.text('Add room'));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Add'));
+          await tester.pumpAndSettle();
+        }
+        expect(find.text('Touches Room 1'), findsOneWidget);
+        expect(find.byTooltip('Move right'), findsOneWidget);
+      });
+    });
+
+    testWidgets('Before and after, and the report', (tester) async {
+      await atDoubleText(tester, () async {
+        await pumpSagap(tester, repo: await withSecondWalk(await populated()));
+        await openCompareAndReport(tester);
+      });
+    });
   });
+}
+
+/// Adds a second, newer sketch walk to the first home of [repo].
+Future<MemoryScanRepository> withSecondWalk(MemoryScanRepository repo) async {
+  await repo.saveScan(
+    repo.homesById.keys.first,
+    ScanRecord(
+      startedAt: testNow.add(const Duration(days: 1)),
+      durationMs: 60000,
+      mode: ScanMode.manual,
+      samples: [
+        for (var i = 0; i < 12; i++)
+          StoredSample(tMs: i, rssiDbm: -45 - i * 2, xM: 0.5 + i * 0.5, yM: 1.5),
+      ],
+      path: const [],
+    ),
+  );
+  return repo;
+}
+
+/// Homes → My home → Before and after → Make a report.
+Future<void> openCompareAndReport(WidgetTester tester, {Future<void> Function()? check}) async {
+  await tester.tap(find.text('Homes'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('My home'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byTooltip('Before and after'));
+  await tester.pumpAndSettle();
+  expect(find.text('Typical signal'), findsOneWidget);
+  await check?.call();
+  await tester.scrollUntilVisible(find.text('Make a report'), 200);
+  await tester.tap(find.text('Make a report'));
+  await tester.pumpAndSettle();
+  expect(find.text('Share image'), findsOneWidget);
+  await check?.call();
 }
