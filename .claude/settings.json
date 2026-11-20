@@ -1,0 +1,25 @@
+{
+  "permissions": {
+    "allow": [
+      "Read",
+      "Glob",
+      "Grep",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(flutter analyze *)",
+      "Bash(flutter test *)"
+    ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(rm *)",
+      "Bash(flutter pub add *)"
+    ],
+    "deny": [
+      "Bash(git push *)",
+      "Bash(git reset --hard *)",
+      "Bash(git branch -D *)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}
